@@ -1,0 +1,249 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Auth Debug Tool</title>
+    <style>
+        body {
+            font-family: 'Courier New', monospace;
+            max-width: 1200px;
+            margin: 20px auto;
+            padding: 20px;
+            background: #1a1a1a;
+            color: #00ff00;
+        }
+        h1 { color: #00ff00; }
+        .section {
+            background: #2a2a2a;
+            padding: 15px;
+            margin: 15px 0;
+            border-radius: 5px;
+            border: 1px solid #00ff00;
+        }
+        .label { color: #ffff00; font-weight: bold; }
+        .value { color: #00ff00; word-break: break-all; }
+        .error { color: #ff0000; }
+        .success { color: #00ff00; }
+        button {
+            background: #00ff00;
+            color: #000;
+            border: none;
+            padding: 10px 20px;
+            margin: 5px;
+            cursor: pointer;
+            font-weight: bold;
+            border-radius: 3px;
+        }
+        button:hover { background: #00cc00; }
+        pre {
+            background: #000;
+            padding: 10px;
+            border-radius: 3px;
+            overflow-x: auto;
+        }
+    </style>
+</head>
+<body>
+    <h1>🔐 CodeFlow Auth Debug Tool</h1>
+    
+    <div class="section">
+        <h2>📦 LocalStorage Contents</h2>
+        <div id="localStorage"></div>
+    </div>
+
+    <div class="section">
+        <h2>🔑 JWT Token Analysis</h2>
+        <div id="tokenAnalysis"></div>
+    </div>
+
+    <div class="section">
+        <h2>🧪 API Test</h2>
+        <button onclick="testProgressAPI()">Test GET /progress/{user_id}</button>
+        <button onclick="testTopicsAPI()">Test GET /analyze/{user_id}/topics</button>
+        <button onclick="testLoginAPI()">Test POST /auth/login</button>
+        <div id="apiTest"></div>
+    </div>
+
+    <script>
+        const API_URL = 'https://n8e9ghd13g.execute-api.ap-south-1.amazonaws.com/dev';
+
+        // Display localStorage contents
+        function displayLocalStorage() {
+            const container = document.getElementById('localStorage');
+            const items = {
+                'access_token': localStorage.getItem('access_token'),
+                'refresh_token': localStorage.getItem('refresh_token'),
+                'user': localStorage.getItem('user')
+            };
+
+            let html = '';
+            for (const [key, value] of Object.entries(items)) {
+                html += `<div style="margin: 10px 0;">`;
+                html += `<span class="label">${key}:</span><br>`;
+                if (value) {
+                    if (key === 'user') {
+                        try {
+                            const parsed = JSON.parse(value);
+                            html += `<pre class="value">${JSON.stringify(parsed, null, 2)}</pre>`;
+                        } catch (e) {
+                            html += `<span class="value">${value}</span>`;
+                        }
+                    } else {
+                        html += `<span class="value">${value.substring(0, 50)}...</span>`;
+                    }
+                } else {
+                    html += `<span class="error">NOT FOUND</span>`;
+                }
+                html += `</div>`;
+            }
+            container.innerHTML = html;
+        }
+
+        // Decode JWT token
+        function decodeJWT(token) {
+            try {
+                const parts = token.split('.');
+                if (parts.length !== 3) {
+                    return { error: 'Invalid JWT format' };
+                }
+                
+                const payload = JSON.parse(atob(parts[1]));
+                const header = JSON.parse(atob(parts[0]));
+                
+                return { header, payload };
+            } catch (e) {
+                return { error: e.message };
+            }
+        }
+
+        // Display token analysis
+        function displayTokenAnalysis() {
+            const container = document.getElementById('tokenAnalysis');
+            const token = localStorage.getItem('access_token');
+
+            if (!token) {
+                container.innerHTML = '<span class="error">No access token found</span>';
+                return;
+            }
+
+            const decoded = decodeJWT(token);
+            
+            if (decoded.error) {
+                container.innerHTML = `<span class="error">Error: ${decoded.error}</span>`;
+                return;
+            }
+
+            const now = Math.floor(Date.now() / 1000);
+            const exp = decoded.payload.exp;
+            const isExpired = exp < now;
+            const timeLeft = exp - now;
+
+            let html = '<div>';
+            html += '<h3>Header:</h3>';
+            html += `<pre>${JSON.stringify(decoded.header, null, 2)}</pre>`;
+            html += '<h3>Payload:</h3>';
+            html += `<pre>${JSON.stringify(decoded.payload, null, 2)}</pre>`;
+            html += '<h3>Expiration:</h3>';
+            html += `<div class="${isExpired ? 'error' : 'success'}">`;
+            html += `Status: ${isExpired ? 'EXPIRED' : 'VALID'}<br>`;
+            html += `Expires: ${new Date(exp * 1000).toLocaleString()}<br>`;
+            html += `Time left: ${isExpired ? 'EXPIRED' : Math.floor(timeLeft / 60) + ' minutes'}`;
+            html += `</div>`;
+            html += '</div>';
+
+            container.innerHTML = html;
+        }
+
+        // Test API endpoint
+        async function testAPI(endpoint, method = 'GET', body = null) {
+            const container = document.getElementById('apiTest');
+            container.innerHTML = '<div class="value">Testing...</div>';
+
+            const token = localStorage.getItem('access_token');
+            const headers = {
+                'Content-Type': 'application/json'
+            };
+
+            if (token) {
+                headers['Authorization'] = `Bearer ${token}`;
+            }
+
+            const options = {
+                method,
+                headers
+            };
+
+            if (body) {
+                options.body = JSON.stringify(body);
+            }
+
+            try {
+                console.log('Request:', { url: API_URL + endpoint, options });
+                const response = await fetch(API_URL + endpoint, options);
+                console.log('Response:', response);
+
+                const responseText = await response.text();
+                let responseData;
+                try {
+                    responseData = JSON.parse(responseText);
+                } catch (e) {
+                    responseData = responseText;
+                }
+
+                let html = '<div style="margin-top: 10px;">';
+                html += `<div class="${response.ok ? 'success' : 'error'}">`;
+                html += `<strong>Status:</strong> ${response.status} ${response.statusText}<br>`;
+                html += `<strong>URL:</strong> ${API_URL + endpoint}<br>`;
+                html += `<strong>Method:</strong> ${method}<br>`;
+                html += `<strong>Headers Sent:</strong><pre>${JSON.stringify(headers, null, 2)}</pre>`;
+                html += `</div>`;
+                html += '<h4>Response:</h4>';
+                html += `<pre>${JSON.stringify(responseData, null, 2)}</pre>`;
+                html += '</div>';
+
+                container.innerHTML = html;
+            } catch (error) {
+                container.innerHTML = `<div class="error">Error: ${error.message}</div>`;
+            }
+        }
+
+        async function testProgressAPI() {
+            const user = JSON.parse(localStorage.getItem('user') || '{}');
+            if (!user.user_id) {
+                document.getElementById('apiTest').innerHTML = '<div class="error">No user_id found in localStorage</div>';
+                return;
+            }
+            await testAPI(`/progress/${user.user_id}`);
+        }
+
+        async function testTopicsAPI() {
+            const user = JSON.parse(localStorage.getItem('user') || '{}');
+            if (!user.user_id) {
+                document.getElementById('apiTest').innerHTML = '<div class="error">No user_id found in localStorage</div>';
+                return;
+            }
+            await testAPI(`/analyze/${user.user_id}/topics`);
+        }
+
+        async function testLoginAPI() {
+            const user = JSON.parse(localStorage.getItem('user') || '{}');
+            if (!user.leetcode_username) {
+                document.getElementById('apiTest').innerHTML = '<div class="error">No leetcode_username found. Please enter credentials:</div>';
+                return;
+            }
+            const password = prompt('Enter password for ' + user.leetcode_username);
+            if (!password) return;
+            
+            await testAPI('/auth/login', 'POST', {
+                leetcode_username: user.leetcode_username,
+                password: password
+            });
+        }
+
+        // Initialize
+        displayLocalStorage();
+        displayTokenAnalysis();
+    </script>
+</body>
+</html>

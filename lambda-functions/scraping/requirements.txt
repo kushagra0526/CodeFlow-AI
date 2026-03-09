@@ -1,0 +1,10 @@
+# Scraping Lambda Function Dependencies
+# These are in addition to the shared layer dependencies
+
+# HTTP client for async requests
+httpx>=0.25.0
+
+# Note: The following are provided by the shared Lambda layer:
+# - boto3
+# - pydantic
+# - aws-xray-sdk

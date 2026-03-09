@@ -1,0 +1,852 @@
+openapi: 3.0.3
+info:
+  title: CodeFlow AI Platform API
+  description: |
+    REST API for CodeFlow AI Platform - An AI-powered competitive programming learning platform.
+    
+    ## Features
+    - User authentication with JWT tokens
+    - LeetCode profile analysis and topic proficiency tracking
+    - AI-powered learning path generation using Amazon Bedrock
+    - Personalized problem recommendations (Goldilocks algorithm)
+    - Conversational AI mentor with RAG (Retrieval-Augmented Generation)
+    - Progress tracking with streaks and badges
+    - Admin analytics (DAU/WAU/MAU, retention metrics)
+    
+    ## Authentication
+    Most endpoints require JWT authentication. Include the access token in the Authorization header:
+    ```
+    Authorization: Bearer <access_token>
+    ```
+    
+    ## Rate Limiting
+    - Authenticated users: 100 requests/minute
+    - Anonymous (IP-based): 10 requests/minute
+    - Burst limit: 200 requests
+    
+    ## Error Codes
+    - 400: Bad Request - Invalid input parameters
+    - 401: Unauthorized - Missing or invalid authentication
+    - 403: Forbidden - Insufficient permissions
+    - 404: Not Found - Resource not found
+    - 409: Conflict - Resource already exists
+    - 429: Too Many Requests - Rate limit exceeded
+    - 500: Internal Server Error - Server-side error
+    
+  version: 1.0.0
+  contact:
+    name: CodeFlow AI Team
+    email: team@codeflow.ai
+  license:
+    name: MIT
+    url: https://opensource.org/licenses/MIT
+
+servers:
+  - url: https://api.codeflow.ai/v1
+    description: Production server (Mumbai - ap-south-1)
+  - url: https://staging-api.codeflow.ai/v1
+    description: Staging server
+
+tags:
+  - name: Authentication
+    description: User registration, login, and token management
+  - name: Profile Analysis
+    description: LeetCode profile analysis and topic proficiency
+  - name: Chat Mentor
+    description: AI-powered conversational mentor with RAG
+  - name: Recommendations
+    description: Learning path generation and problem recommendations
+  - name: Progress
+    description: Progress tracking, streaks, and badges
+  - name: Admin
+    description: Admin-only analytics endpoints
+
+security:
+  - BearerAuth: []
+
+paths:
+  /auth/register:
+    post:
+      tags:
+        - Authentication
+      summary: Register new user
+      description: Create a new user account with LeetCode username
+      operationId: registerUser
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - leetcode_username
+                - email
+                - password
+              properties:
+                leetcode_username:
+                  type: string
+                  minLength: 1
+                  maxLength: 50
+                  example: john_doe
+                  description: LeetCode username
+                email:
+                  type: string
+                  format: email
+                  example: john@example.com
+                password:
+                  type: string
+                  minLength: 8
+                  format: password
+                  example: SecurePass123!
+                language_preference:
+                  type: string
+                  enum: [en, hi]
+                  default: en
+                  example: en
+                  description: Preferred language (English or Hindi)
+      responses:
+        '201':
+          description: User registered successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  user_id:
+                    type: string
+                    format: uuid
+                    example: 550e8400-e29b-41d4-a716-446655440000
+                  access_token:
+                    type: string
+                    example: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
+                  refresh_token:
+                    type: string
+                    example: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
+                  expires_in:
+                    type: integer
+                    example: 86400
+                    description: Token expiration time in seconds
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '409':
+          description: User already exists
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: User with this LeetCode username already exists
+
+  /auth/login:
+    post:
+      tags:
+        - Authentication
+      summary: User login
+      description: Authenticate user and receive JWT tokens
+      operationId: loginUser
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - leetcode_username
+                - password
+              properties:
+                leetcode_username:
+                  type: string
+                  example: john_doe
+                password:
+                  type: string
+                  format: password
+                  example: SecurePass123!
+      responses:
+        '200':
+          description: Login successful
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  access_token:
+                    type: string
+                    example: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
+                  refresh_token:
+                    type: string
+                    example: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
+                  user:
+                    type: object
+                    properties:
+                      user_id:
+                        type: string
+                        format: uuid
+                      leetcode_username:
+                        type: string
+                      language_preference:
+                        type: string
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /auth/refresh:
+    post:
+      tags:
+        - Authentication
+      summary: Refresh access token
+      description: Get a new access token using refresh token
+      operationId: refreshToken
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - refresh_token
+              properties:
+                refresh_token:
+                  type: string
+                  example: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
+      responses:
+        '200':
+          description: Token refreshed successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  access_token:
+                    type: string
+                  expires_in:
+                    type: integer
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /analyze/profile:
+    post:
+      tags:
+        - Profile Analysis
+      summary: Analyze LeetCode profile
+      description: |
+        Analyze user's LeetCode profile to calculate topic proficiency and generate skill heatmap.
+        This endpoint processes submission history and classifies topics as weak (<40%), moderate (40-70%), or strong (>70%).
+      operationId: analyzeProfile
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - user_id
+                - leetcode_username
+              properties:
+                user_id:
+                  type: string
+                  format: uuid
+                leetcode_username:
+                  type: string
+                submissions:
+                  type: array
+                  description: Optional submission history (if not provided, uses cached data)
+                  items:
+                    type: object
+      responses:
+        '200':
+          description: Profile analyzed successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: Profile analysis complete
+                  user_id:
+                    type: string
+                    format: uuid
+                  topics:
+                    type: object
+                    additionalProperties:
+                      type: object
+                      properties:
+                        proficiency:
+                          type: number
+                          format: float
+                          example: 65.5
+                        classification:
+                          type: string
+                          enum: [weak, moderate, strong]
+                  heatmap:
+                    type: object
+                    properties:
+                      weak:
+                        type: array
+                        items:
+                          $ref: '#/components/schemas/TopicData'
+                      moderate:
+                        type: array
+                        items:
+                          $ref: '#/components/schemas/TopicData'
+                      strong:
+                        type: array
+                        items:
+                          $ref: '#/components/schemas/TopicData'
+                  summary:
+                    type: object
+                    properties:
+                      total_topics:
+                        type: integer
+                      weak_topics:
+                        type: integer
+                      moderate_topics:
+                        type: integer
+                      strong_topics:
+                        type: integer
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          description: Profile not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /analyze/{user_id}/topics:
+    get:
+      tags:
+        - Profile Analysis
+      summary: Get topic proficiency breakdown
+      description: Retrieve detailed topic proficiency data for a user
+      operationId: getTopics
+      parameters:
+        - name: user_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Topic proficiency data
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  user_id:
+                    type: string
+                    format: uuid
+                  topics:
+                    type: object
+                    additionalProperties:
+                      type: object
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /progress/{user_id}:
+    get:
+      tags:
+        - Progress
+      summary: Get user progress
+      description: |
+        Retrieve user's progress including current streak, earned badges, and problems solved.
+        Automatically checks for streak reset if more than 24 hours have passed since last solve.
+      operationId: getProgress
+      parameters:
+        - name: user_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: User progress data
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  user_id:
+                    type: string
+                    format: uuid
+                  streak_count:
+                    type: integer
+                    example: 7
+                    description: Current streak in days
+                  badges:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Badge'
+                  problems_solved_today:
+                    type: integer
+                    example: 3
+                  total_problems_solved:
+                    type: integer
+                    example: 127
+                  last_solve_timestamp:
+                    type: string
+                    format: date-time
+                    nullable: true
+                  next_milestone:
+                    type: object
+                    nullable: true
+                    properties:
+                      days:
+                        type: integer
+                        example: 30
+                      badge_name:
+                        type: string
+                        example: 30 Day Streak
+                      days_remaining:
+                        type: integer
+                        example: 23
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /chat-mentor:
+    post:
+      tags:
+        - Chat Mentor
+      summary: Chat with AI mentor
+      description: |
+        Send a message to the AI mentor for help with coding problems, concepts, or debugging.
+        Uses multi-step reasoning with RAG (Retrieval-Augmented Generation) and LLM caching for cost optimization.
+        
+        **Features:**
+        - Intent detection (code debugging, concept questions, hints)
+        - RAG-based knowledge retrieval
+        - Code analysis with Amazon Bedrock Claude
+        - 80% cache hit rate for cost savings
+      operationId: chatMentor
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - user_id
+                - message
+              properties:
+                user_id:
+                  type: string
+                  format: uuid
+                message:
+                  type: string
+                  example: Why is my DP solution getting TLE?
+                code:
+                  type: string
+                  nullable: true
+                  example: |
+                    def solve(n):
+                        if n <= 1:
+                            return n
+                        return solve(n-1) + solve(n-2)
+                problem_id:
+                  type: string
+                  nullable: true
+                  example: fibonacci-number
+      responses:
+        '200':
+          description: AI mentor response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  response:
+                    type: string
+                    example: Your solution is getting Time Limit Exceeded because...
+                  intent:
+                    type: string
+                    enum: [CODE_DEBUGGING, CONCEPT_QUESTION, HINT_REQUEST, GENERAL]
+                  cached:
+                    type: boolean
+                    example: false
+                  model_used:
+                    type: string
+                    enum: [haiku, sonnet]
+                    example: sonnet
+        '400':
+          $ref: '#/components/responses/BadRequest'
+
+  /recommendations/generate-path:
+    post:
+      tags:
+        - Recommendations
+      summary: Generate learning path
+      description: |
+        Generate a personalized learning path using Amazon Bedrock Claude 3 Sonnet.
+        
+        **Requirements:**
+        - 20-30 problems
+        - 70%+ problems target weak topics
+        - Difficulty distribution: 30% Easy, 50% Medium, 20% Hard
+      operationId: generateLearningPath
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - user_id
+              properties:
+                user_id:
+                  type: string
+                  format: uuid
+                weak_topics:
+                  type: array
+                  items:
+                    type: string
+                  example: [dynamic-programming, graphs]
+                strong_topics:
+                  type: array
+                  items:
+                    type: string
+                  example: [arrays, strings]
+                proficiency_level:
+                  type: string
+                  enum: [beginner, intermediate, advanced]
+                  default: intermediate
+      responses:
+        '200':
+          description: Learning path generated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  path_id:
+                    type: string
+                    format: uuid
+                  problems:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Problem'
+                  total_problems:
+                    type: integer
+                  weak_topics_targeted:
+                    type: array
+                    items:
+                      type: string
+                  created_at:
+                    type: string
+                    format: date-time
+        '400':
+          $ref: '#/components/responses/BadRequest'
+
+  /recommendations/next-problem:
+    get:
+      tags:
+        - Recommendations
+      summary: Get next recommended problem
+      description: |
+        Get next problem recommendation using the Goldilocks algorithm.
+        
+        **Goldilocks Algorithm:**
+        - Calculates recent success rate (last 10 problems)
+        - Adjusts difficulty based on performance:
+          * Success ≥80% → increase difficulty
+          * Success ≤40% → decrease difficulty
+          * Otherwise → maintain current difficulty
+        - Tracks consecutive failures (2+ → easier problem)
+      operationId: getNextProblem
+      parameters:
+        - name: user_id
+          in: query
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Next problem recommendation
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  problem:
+                    $ref: '#/components/schemas/Problem'
+                  reason:
+                    type: string
+                    example: Increasing difficulty (success rate: 85%)
+                  current_index:
+                    type: integer
+                  total_problems:
+                    type: integer
+        '404':
+          description: No learning path found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /recommendations/hint:
+    post:
+      tags:
+        - Recommendations
+      summary: Generate hint for problem
+      description: |
+        Generate a progressive hint for a problem using Amazon Bedrock.
+        
+        **Hint Levels:**
+        1. High-level approach/key insight
+        2. Data structure suggestion
+        3. Algorithm outline (still no code)
+        
+        **Constraints:**
+        - Code-free hints (no code snippets)
+        - No explicit solutions
+      operationId: generateHint
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - problem_id
+                - user_id
+              properties:
+                problem_id:
+                  type: string
+                  example: two-sum
+                problem_description:
+                  type: string
+                  example: Given an array of integers...
+                user_id:
+                  type: string
+                  format: uuid
+                hint_level:
+                  type: integer
+                  enum: [1, 2, 3]
+                  default: 1
+                  example: 1
+      responses:
+        '200':
+          description: Hint generated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  hint:
+                    type: string
+                    example: Think about what data structure would help you efficiently look up values...
+                  hint_level:
+                    type: integer
+                  problem_id:
+                    type: string
+        '400':
+          $ref: '#/components/responses/BadRequest'
+
+  /admin/analytics/dau:
+    get:
+      tags:
+        - Admin
+      summary: Get DAU/WAU/MAU metrics
+      description: |
+        Get Daily/Weekly/Monthly Active Users metrics.
+        
+        **Admin-only endpoint** - requires X-Api-Key header.
+      operationId: getDAU
+      security:
+        - ApiKeyAuth: []
+      responses:
+        '200':
+          description: Active user metrics
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  date:
+                    type: string
+                    format: date
+                  dau:
+                    type: integer
+                    example: 150
+                    description: Daily Active Users
+                  wau:
+                    type: integer
+                    example: 450
+                    description: Weekly Active Users
+                  mau:
+                    type: integer
+                    example: 1200
+                    description: Monthly Active Users
+                  api_metrics:
+                    type: object
+                    properties:
+                      avg_response_time_ms:
+                        type: number
+                      error_rate:
+                        type: number
+                  timestamp:
+                    type: string
+                    format: date-time
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /admin/analytics/retention:
+    get:
+      tags:
+        - Admin
+      summary: Get retention metrics
+      description: |
+        Get user retention metrics (Day 1, Day 7, Day 30).
+        
+        **Admin-only endpoint** - requires X-Api-Key header.
+      operationId: getRetention
+      security:
+        - ApiKeyAuth: []
+      responses:
+        '200':
+          description: Retention metrics
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  date:
+                    type: string
+                    format: date
+                  day1_retention:
+                    type: number
+                    format: float
+                    example: 0.65
+                    description: Percentage of users who return the next day
+                  day7_retention:
+                    type: number
+                    format: float
+                    example: 0.42
+                  day30_retention:
+                    type: number
+                    format: float
+                    example: 0.28
+                  timestamp:
+                    type: string
+                    format: date-time
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: JWT access token obtained from /auth/login or /auth/register
+    ApiKeyAuth:
+      type: apiKey
+      in: header
+      name: X-Api-Key
+      description: Admin API key for analytics endpoints
+
+  schemas:
+    Error:
+      type: object
+      properties:
+        error:
+          type: string
+          example: Invalid request
+        details:
+          type: object
+          nullable: true
+
+    TopicData:
+      type: object
+      properties:
+        name:
+          type: string
+          example: dynamic-programming
+        proficiency:
+          type: number
+          format: float
+          example: 35.5
+
+    Badge:
+      type: object
+      properties:
+        badge_id:
+          type: string
+        name:
+          type: string
+          example: 7 Day Streak
+        earned_at:
+          type: string
+          format: date-time
+        milestone:
+          type: integer
+          example: 7
+
+    Problem:
+      type: object
+      properties:
+        title:
+          type: string
+          example: Two Sum
+        difficulty:
+          type: string
+          enum: [Easy, Medium, Hard]
+        topics:
+          type: array
+          items:
+            type: string
+          example: [arrays, hash-table]
+        leetcode_id:
+          type: string
+          example: "1"
+        estimated_time_minutes:
+          type: integer
+          example: 15
+        reason:
+          type: string
+          example: Foundation for hash table usage
+
+  responses:
+    BadRequest:
+      description: Bad Request - Invalid input parameters
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error: Invalid request
+            details:
+              field: leetcode_username
+              message: Field required
+
+    Unauthorized:
+      description: Unauthorized - Missing or invalid authentication
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error: Invalid credentials
+
+    Forbidden:
+      description: Forbidden - Insufficient permissions
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error: "Forbidden: Admin access required"
+
+    NotFound:
+      description: Not Found - Resource not found
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error: User not found

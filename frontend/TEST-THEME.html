@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Theme Toggle Test</title>
+    <style>
+        body {
+            font-family: system-ui, -apple-system, sans-serif;
+            padding: 40px;
+            max-width: 800px;
+            margin: 0 auto;
+        }
+        .test-section {
+            margin: 20px 0;
+            padding: 20px;
+            border: 2px solid #e5e7eb;
+            border-radius: 8px;
+        }
+        .success {
+            background: #d1fae5;
+            border-color: #10b981;
+        }
+        .info {
+            background: #dbeafe;
+            border-color: #3b82f6;
+        }
+        button {
+            background: linear-gradient(to right, #a855f7, #ec4899);
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 16px;
+            margin: 10px 5px;
+        }
+        button:hover {
+            opacity: 0.9;
+        }
+        code {
+            background: #f3f4f6;
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-family: monospace;
+        }
+        .status {
+            font-weight: bold;
+            padding: 8px 12px;
+            border-radius: 4px;
+            display: inline-block;
+            margin: 10px 0;
+        }
+    </style>
+</head>
+<body>
+    <h1>🎨 CodeFlow AI - Theme Toggle Test</h1>
+    
+    <div class="test-section info">
+        <h2>Current Status</h2>
+        <div id="status" class="status">Checking...</div>
+        <p><strong>Current Theme:</strong> <span id="current-theme">-</span></p>
+        <p><strong>LocalStorage Value:</strong> <code id="storage-value">-</code></p>
+    </div>
+
+    <div class="test-section">
+        <h2>Manual Theme Control</h2>
+        <p>Use these buttons to manually set the theme:</p>
+        <button onclick="setTheme('light')">☀️ Set Light Mode</button>
+        <button onclick="setTheme('dark')">🌙 Set Dark Mode</button>
+        <button onclick="clearTheme()">🔄 Clear Theme (Use System)</button>
+    </div>
+
+    <div class="test-section">
+        <h2>Instructions</h2>
+        <ol>
+            <li>Make sure your Next.js dev server is running: <code>npm run dev</code></li>
+            <li>Open <a href="http://localhost:3000" target="_blank">http://localhost:3000</a></li>
+            <li>Look for the sun/moon icon in the top-right corner</li>
+            <li>Click it to toggle between light and dark modes</li>
+            <li>The entire page should change instantly</li>
+        </ol>
+    </div>
+
+    <div class="test-section success">
+        <h2>✅ What Should Happen</h2>
+        <ul>
+            <li><strong>Dark Mode:</strong> Black background, white text, sun icon visible</li>
+            <li><strong>Light Mode:</strong> White/gray background, dark text, moon icon visible</li>
+            <li><strong>Persistence:</strong> Theme choice saved and restored on page reload</li>
+            <li><strong>Navigation:</strong> Theme persists when navigating between pages</li>
+        </ul>
+    </div>
+
+    <div class="test-section">
+        <h2>Troubleshooting</h2>
+        <ul>
+            <li>If button doesn't work, try hard refresh: <code>Cmd+Shift+R</code> or <code>Ctrl+Shift+R</code></li>
+            <li>Check browser console (F12) for errors</li>
+            <li>Try clearing localStorage using the button above</li>
+            <li>Make sure you're on the latest build: <code>npm run build</code></li>
+        </ul>
+    </div>
+
+    <script>
+        function updateStatus() {
+            const theme = localStorage.getItem('theme');
+            const statusEl = document.getElementById('status');
+            const currentThemeEl = document.getElementById('current-theme');
+            const storageValueEl = document.getElementById('storage-value');
+
+            if (theme) {
+                statusEl.textContent = '✅ Theme is set';
+                statusEl.style.background = '#d1fae5';
+                statusEl.style.color = '#065f46';
+                currentThemeEl.textContent = theme;
+                storageValueEl.textContent = theme;
+            } else {
+                statusEl.textContent = '⚠️ No theme set (using system default)';
+                statusEl.style.background = '#fef3c7';
+                statusEl.style.color = '#92400e';
+                currentThemeEl.textContent = 'System Default';
+                storageValueEl.textContent = 'null';
+            }
+        }
+
+        function setTheme(theme) {
+            localStorage.setItem('theme', theme);
+            alert(`Theme set to: ${theme}\n\nNow refresh your Next.js app to see the change.`);
+            updateStatus();
+        }
+
+        function clearTheme() {
+            localStorage.removeItem('theme');
+            alert('Theme cleared!\n\nThe app will now use your system preference.');
+            updateStatus();
+        }
+
+        // Update status on load
+        updateStatus();
+
+        // Update status every second
+        setInterval(updateStatus, 1000);
+    </script>
+</body>
+</html>

@@ -1,0 +1,19 @@
+{
+  "environment": "dev",
+  "aws-region": "ap-south-1",
+  "vpc-config": {
+    "maxAzs": 2,
+    "natGateways": 1,
+    "cidr": "10.0.0.0/16"
+  },
+  "tags": {
+    "Project": "CodeFlow-AI",
+    "ManagedBy": "AWS-CDK",
+    "CostCenter": "Engineering"
+  },
+  "availability-zones:account=135247151670:region=ap-south-1": [
+    "ap-south-1a",
+    "ap-south-1b",
+    "ap-south-1c"
+  ]
+}

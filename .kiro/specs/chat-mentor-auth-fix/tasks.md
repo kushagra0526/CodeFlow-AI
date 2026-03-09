@@ -1,0 +1,132 @@
+# Implementation Plan
+
+- [x] 1. Write bug condition exploration test
+  - **Property 1: Fault Condition** - Unauthenticated Access Redirects to Login
+  - **CRITICAL**: This test MUST FAIL on unfixed code - failure confirms the bug exists
+  - **DO NOT attempt to fix the test or the code when it fails**
+  - **NOTE**: This test encodes the expected behavior - it will validate the fix when it passes after implementation
+  - **GOAL**: Surface counterexamples that demonstrate the bug exists
+  - **Manual Testing Approach**: Use browser DevTools to observe the bug in action
+  - Test that unauthenticated users (no JWT token in localStorage) attempting to access `/dashboard/mentor` and send messages result in CORS errors and 403 Forbidden responses
+  - Test cases to execute on UNFIXED code:
+    - Clear localStorage → Navigate to `/dashboard/mentor` → Observe page loads without redirect → Send message → Observe CORS error in console
+    - Set expired token in localStorage → Navigate to `/dashboard/mentor` → Send message → Observe 403 Forbidden
+    - Use DevTools Network tab to observe OPTIONS preflight request → Check if it requires authorization (may show 403)
+    - Observe 403 response headers → Check if CORS headers are missing
+  - Run tests on UNFIXED code
+  - **EXPECTED OUTCOME**: Tests FAIL (CORS errors occur, no redirect to login, 403 responses may lack CORS headers)
+  - Document counterexamples found:
+    - Specific CORS error messages from browser console
+    - Network request/response details showing 403 without proper CORS headers
+    - Confirmation that OPTIONS requests require authorization (if applicable)
+    - Confirmation that no redirect to login occurs
+  - Mark task complete when tests are executed, failures are observed, and counterexamples are documented
+  - _Requirements: 2.1, 2.3, 2.4_
+
+- [x] 2. Write preservation property tests (BEFORE implementing fix)
+  - **Property 2: Preservation** - Authenticated Chat Functionality
+  - **IMPORTANT**: Follow observation-first methodology
+  - Observe behavior on UNFIXED code for authenticated users (valid JWT token)
+  - Test cases to execute on UNFIXED code:
+    - Login with valid credentials → Navigate to `/dashboard/mentor` → Verify page loads without redirect
+    - Send multiple chat messages → Verify all messages are sent successfully and responses received
+    - Navigate between dashboard pages → Verify no unexpected redirects occur
+    - Test token refresh mechanism → Verify it works correctly for other endpoints
+    - Logout → Verify tokens cleared and redirect to login occurs
+  - Write property-based tests or comprehensive unit tests capturing observed behavior patterns:
+    - For all authenticated users with valid tokens, chat messages should be sent and responses received
+    - For all authenticated users, navigation to mentor page should succeed without redirect
+    - For all authenticated users, token refresh should work as designed
+  - Run tests on UNFIXED code
+  - **EXPECTED OUTCOME**: Tests PASS (confirms baseline authenticated behavior to preserve)
+  - Mark task complete when tests are written, run, and passing on unfixed code
+  - _Requirements: 3.1, 3.2, 3.3, 3.4, 3.5_
+
+- [x] 3. Fix for unauthenticated access to chat mentor
+
+  - [x] 3.1 Add authentication guard to MentorPage component
+    - Open `frontend/app/dashboard/mentor/page.tsx`
+    - Import `useAuth` hook from auth context
+    - Import `useRouter` from Next.js for navigation
+    - Add authentication check at component start: `const { isAuthenticated, isLoading } = useAuth()`
+    - Add `useEffect` to redirect to login if not authenticated: `if (!isLoading && !isAuthenticated) router.push('/auth/login')`
+    - Show loading state while checking authentication
+    - _Bug_Condition: isBugCondition(input) where input.user == null AND input.action == 'page_load'_
+    - _Expected_Behavior: User is redirected to /auth/login before page renders_
+    - _Preservation: Authenticated users continue to access mentor page normally_
+    - _Requirements: 2.1, 2.3, 3.1_
+
+  - [x] 3.2 Improve 403 error handling in API client
+    - Open `frontend/lib/api.ts`
+    - Add specific handling for 403 Forbidden responses in the `request` method
+    - When 403 is detected, clear tokens from localStorage
+    - Throw a specific authentication error that components can catch
+    - Ensure Authorization header is included when token exists (verify existing implementation)
+    - _Bug_Condition: isBugCondition(input) where input.user.token_expired OR input.user.token_invalid_
+    - _Expected_Behavior: Tokens are cleared and authentication error is thrown, allowing redirect to login_
+    - _Preservation: 401 token refresh mechanism continues to work, other error handling unchanged_
+    - _Requirements: 2.4, 3.2_
+
+  - [x] 3.3 Add explicit OPTIONS method without authorizer
+    - Open `infrastructure/lib/codeflow-infrastructure-stack.ts`
+    - Find the `/chat-mentor` resource definition
+    - Add explicit OPTIONS method: `chatMentorResource.addMethod('OPTIONS', new apigateway.MockIntegration(...))`
+    - Configure OPTIONS method to return 200 with proper CORS headers
+    - Ensure OPTIONS method has NO authorizer (bypasses JWT authorization)
+    - _Bug_Condition: CORS preflight OPTIONS request requires authorization_
+    - _Expected_Behavior: OPTIONS requests return 200 with CORS headers, no authorization required_
+    - _Preservation: POST method continues to require JWT authorization_
+    - _Requirements: 2.2, 3.3_
+
+  - [x] 3.4 Add Gateway Responses for 403 with CORS headers
+    - In `infrastructure/lib/codeflow-infrastructure-stack.ts`
+    - Add gateway response configuration for UNAUTHORIZED (403) responses
+    - Include CORS headers in gateway response: Access-Control-Allow-Origin, Access-Control-Allow-Headers, Access-Control-Allow-Methods
+    - Ensure browser can read 403 error responses
+    - _Bug_Condition: 403 responses from API Gateway lack CORS headers_
+    - _Expected_Behavior: 403 responses include proper CORS headers, allowing frontend to handle auth errors_
+    - _Preservation: Other gateway responses and error handling unchanged_
+    - _Requirements: 2.2, 3.4_
+
+  - [x] 3.5 Improve error handling in AIChat component
+    - Open `frontend/components/ai-chat.tsx`
+    - Add specific handling for authentication errors in message sending
+    - Check if error message indicates authentication failure
+    - Provide user-friendly message suggesting login
+    - Optionally trigger redirect to login from component
+    - _Bug_Condition: Authentication errors appear as generic API errors_
+    - _Expected_Behavior: Users see clear authentication error and are redirected to login_
+    - _Preservation: Other error handling (network errors, API errors) unchanged_
+    - _Requirements: 2.4, 3.5_
+
+  - [x] 3.6 Verify bug condition exploration test now passes
+    - **Property 1: Expected Behavior** - Unauthenticated Access Redirects to Login
+    - **IMPORTANT**: Re-run the SAME tests from task 1 - do NOT write new tests
+    - The tests from task 1 encode the expected behavior
+    - When these tests pass, it confirms the expected behavior is satisfied
+    - Run bug condition exploration tests from step 1:
+      - Clear localStorage → Navigate to `/dashboard/mentor` → Should redirect to `/auth/login` (no CORS error)
+      - Set expired token → Navigate to `/dashboard/mentor` → Should redirect to `/auth/login`
+      - Send OPTIONS request → Should return 200 with CORS headers, no authorization required
+      - Force 403 with invalid token → Should receive 403 with proper CORS headers → Frontend should redirect to login
+    - **EXPECTED OUTCOME**: Tests PASS (confirms bug is fixed)
+    - _Requirements: 2.1, 2.2, 2.3, 2.4_
+
+  - [x] 3.7 Verify preservation tests still pass
+    - **Property 2: Preservation** - Authenticated Chat Functionality
+    - **IMPORTANT**: Re-run the SAME tests from task 2 - do NOT write new tests
+    - Run preservation property tests from step 2:
+      - Login with valid credentials → Navigate to `/dashboard/mentor` → Verify page loads normally
+      - Send multiple chat messages → Verify all succeed with responses
+      - Navigate between dashboard pages → Verify no unexpected redirects
+      - Test token refresh → Verify it still works correctly
+      - Logout → Verify tokens cleared and redirect occurs
+    - **EXPECTED OUTCOME**: Tests PASS (confirms no regressions)
+    - Confirm all authenticated chat functionality still works after fix
+    - _Requirements: 3.1, 3.2, 3.3, 3.4, 3.5_
+
+- [x] 4. Checkpoint - Ensure all tests pass
+  - Verify all bug condition tests pass (unauthenticated users are redirected to login)
+  - Verify all preservation tests pass (authenticated users can use chat mentor normally)
+  - Test full integration flow: logout → attempt to access mentor → redirect to login → login → access mentor → send messages successfully
+  - Ask the user if questions arise or if additional testing is needed
