@@ -36,7 +36,7 @@ export default function RoadmapPage() {
     try {
       // First get topics to identify weak areas
       const topicsData = await api.getTopics(user.user_id)
-      
+
       const weakTopics = Object.entries(topicsData.topics)
         .filter(([_, data]) => data.classification === "weak")
         .map(([topic]) => topic)
@@ -168,7 +168,7 @@ export default function RoadmapPage() {
               <RoadmapCard
                 day={index + 1}
                 title={problem.title}
-                topic={problem.topics[0] || "General"}
+                description={problem.topics[0] || "General"}
                 difficulty={problem.difficulty}
                 completed={completedProblems.has(problem.leetcode_id)}
                 delay={0.2 + index * 0.05}
